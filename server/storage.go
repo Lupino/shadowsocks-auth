@@ -1,21 +1,21 @@
 package main
 
 import (
-    "github.com/garyburd/redigo/redis"
     "encoding/json"
+    "github.com/garyburd/redigo/redis"
 )
 
 type User struct {
-    Name string `json:"name"`
+    Name     string `json:"name"`
     Password string `json:"password"`
-    Method  string `json:"method"`
+    Method   string `json:"method"`
 }
 
 type Storage struct {
     conn redis.Conn
 }
 
-func NewStorage(server string) (*Storage, error){
+func NewStorage(server string) (*Storage, error) {
     conn, err := redis.Dial("tcp", server)
     if err != nil {
         return nil, err

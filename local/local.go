@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -148,7 +149,13 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	return
 }
 
+type User struct {
+	Name     string
+	Password string
+}
+
 type ServerCipher struct {
+	user   User
 	server string
 	cipher *ss.Cipher
 }
@@ -156,6 +163,16 @@ type ServerCipher struct {
 var servers struct {
 	srvCipher []*ServerCipher
 	failCnt   []int // failed connection count
+}
+
+func extractUser(data string) (user User) {
+	pack := strings.Split(data, ":")
+	if len(pack) == 2 {
+		user = User{pack[0], pack[1]}
+	} else {
+		user = User{pack[0], pack[0]}
+	}
+	return
 }
 
 func parseServerConfig(config *ss.Config) {
@@ -169,7 +186,8 @@ func parseServerConfig(config *ss.Config) {
 
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		cipher, err := ss.NewCipher(config.Method, config.Password)
+		user := extractUser(config.Password)
+		cipher, err := ss.NewCipher(config.Method, user.Password)
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
@@ -181,9 +199,9 @@ func parseServerConfig(config *ss.Config) {
 		for i, s := range srvArr {
 			if hasPort(s) {
 				log.Println("ignore server_port option for server", s)
-				servers.srvCipher[i] = &ServerCipher{s, cipher}
+				servers.srvCipher[i] = &ServerCipher{user, s, cipher}
 			} else {
-				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
+				servers.srvCipher[i] = &ServerCipher{user, net.JoinHostPort(s, srvPort), cipher}
 			}
 		}
 	} else {
@@ -206,16 +224,17 @@ func parseServerConfig(config *ss.Config) {
 			if !hasPort(server) {
 				log.Fatalf("no port for server %s\n", server)
 			}
-			cipher, ok := cipherCache[passwd]
+			user := extractUser(passwd)
+			cipher, ok := cipherCache[user.Password]
 			if !ok {
 				var err error
-				cipher, err = ss.NewCipher(encmethod, passwd)
+				cipher, err = ss.NewCipher(encmethod, user.Password)
 				if err != nil {
 					log.Fatal("Failed generating ciphers:", err)
 				}
-				cipherCache[passwd] = cipher
+				cipherCache[user.Password] = cipher
 			}
-			servers.srvCipher[i] = &ServerCipher{server, cipher}
+			servers.srvCipher[i] = &ServerCipher{user, server, cipher}
 			i++
 		}
 	}
@@ -226,31 +245,30 @@ func parseServerConfig(config *ss.Config) {
 	return
 }
 
-func DialWithRawAddr(rawaddr[]byte, server string, cipher *ss.Cipher) (remote *ss.Conn, err error) {
-    userName := "lupino"
+func DialWithRawAddr(rawaddr []byte, user User, server string, cipher *ss.Cipher) (remote *ss.Conn, err error) {
 	conn, err := net.Dial("tcp", server)
-    buf := make([]byte, 2)
-    buf[0] = 1
-    buf[1] = byte(len(userName))
-    if _, err = conn.Write(buf); err != nil {
-        conn.Close()
-        return nil, err
-    }
-    if _, err = conn.Write([]byte(userName)); err != nil {
-        conn.Close()
-        return nil, err
-    }
-    remote = ss.NewConn(conn, cipher)
-    if _, err = remote.Write(rawaddr); err != nil {
-        remote.Close()
-        return nil, err
-    }
-    return
+	buf := make([]byte, 2)
+	buf[0] = 1
+	buf[1] = byte(len(user.Name))
+	if _, err = conn.Write(buf); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if _, err = conn.Write([]byte(user.Name)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	remote = ss.NewConn(conn, cipher)
+	if _, err = remote.Write(rawaddr); err != nil {
+		remote.Close()
+		return nil, err
+	}
+	return
 }
 
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	se := servers.srvCipher[serverId]
-	remote, err = DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+	remote, err = DialWithRawAddr(rawaddr, se.user, se.server, se.cipher.Copy())
 	if err != nil {
 		log.Println("error connecting to shadowsocks server:", err)
 		const maxFailCnt = 30

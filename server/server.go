@@ -255,12 +255,7 @@ func main() {
 
     ss.SetDebug(debug)
 
-    var err error
-    storage, err = NewStorage(redisServer)
-    if err != nil {
-        log.Printf("connect to redis fail: %s %v\n", redisServer, err)
-        os.Exit(1)
-    }
+    storage = NewStorage(redisServer)
     if core > 0 {
         runtime.GOMAXPROCS(core)
     }

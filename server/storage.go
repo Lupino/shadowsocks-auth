@@ -12,20 +12,21 @@ type User struct {
 }
 
 type Storage struct {
-    conn redis.Conn
+    pool *redis.Pool
 }
 
-func NewStorage(server string) (*Storage, error) {
-    conn, err := redis.Dial("tcp", server)
-    if err != nil {
-        return nil, err
-    }
-    return &Storage{conn}, nil
+func NewStorage(server string) (*Storage) {
+    pool := redis.NewPool(func() (conn redis.Conn, err error) {
+        conn, err = redis.Dial("tcp", server)
+        return
+    }, 3)
+    return &Storage{pool}
 }
 
 func (s *Storage) Get(key string) (user User, err error) {
     var data []byte
-    data, err = redis.Bytes(s.conn.Do("GET", key))
+    var conn = s.pool.Get()
+    data, err = redis.Bytes(conn.Do("GET", key))
     if err != nil {
         return
     }
@@ -38,6 +39,7 @@ func (s *Storage) Set(key string, user User) (err error) {
     if err != nil {
         return err
     }
-    _, err = s.conn.Do("SET", key, data)
+    conn := s.pool.Get()
+    _, err = conn.Do("SET", key, data)
     return
 }

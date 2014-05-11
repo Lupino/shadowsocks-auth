@@ -1,10 +1,12 @@
 package main
 
 import (
+    "bytes"
     "encoding/binary"
     "errors"
     "flag"
     "fmt"
+    "github.com/cyfdecyf/leakybuf"
     ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
     "io"
     "log"
@@ -120,8 +122,9 @@ const logCntDelta = 100
 var connCnt int
 var nextLogConnCnt int = logCntDelta
 
-func handleConnection(conn *ss.Conn) {
+func handleConnection(user User, conn *ss.Conn) {
     var host string
+    var size = 0
 
     connCnt++ // this maybe not accurate, but should be enough
     if connCnt-nextLogConnCnt >= 0 {
@@ -149,6 +152,13 @@ func handleConnection(conn *ss.Conn) {
     }()
 
     host, extra, err := getRequest(conn)
+    lines := bytes.SplitN(extra, []byte("\r\n"), 2)
+    var uri []byte
+
+    if len(lines) == 2 {
+        uri = lines[0]
+    }
+
     if err != nil {
         log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
         return
@@ -182,8 +192,58 @@ func handleConnection(conn *ss.Conn) {
         debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
     }
     go ss.PipeThenClose(conn, remote, ss.SET_TIMEOUT)
-    ss.PipeThenClose(remote, conn, ss.NO_TIMEOUT)
+    res_size, status_lines := PipeThenClose(remote, conn, ss.NO_TIMEOUT)
+    if uri == nil {
+        fmt.Printf("CONNET %s %s %d\n", host, user.Name, size)
+    } else {
+        size += res_size
+        lines = bytes.SplitN(uri, []byte(" "), 2)
+        status := bytes.SplitN(status_lines, []byte(" "), 3)
+        status_code := status[1]
+        fmt.Printf("%s http://%s%s %s %s %d\n", lines[0], host, lines[1], status_code, user.Name, size)
+    }
     closed = true
+    return
+}
+
+const bufSize = 4096
+const nBuf = 2048
+
+func PipeThenClose(src, dst net.Conn, timeoutOpt int) (total int, line []byte) {
+    var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
+    defer dst.Close()
+    buf := pipeBuf.Get()
+    // defer pipeBuf.Put(buf)
+    var first = true
+    var size int
+    for {
+        if timeoutOpt == ss.SET_TIMEOUT {
+            ss.SetReadTimeout(src)
+        }
+        n, err := src.Read(buf)
+        if first {
+            lines := bytes.SplitN(buf, []byte("\r\n"), 2)
+            if len(lines) == 2 {
+                line = lines[0]
+            }
+            first = false
+        }
+        // read may return EOF with n > 0
+        // should always process n > 0 bytes before handling error
+        if n > 0 {
+            if size, err = dst.Write(buf[0:n]); err != nil {
+                ss.Debug.Println("write:", err)
+                break
+            }
+            total += size
+        }
+        if err != nil || n == 0 {
+            // Always "use of closed network connection", but no easy way to
+            // identify this specific error. So just leave the error along for now.
+            // More info here: https://code.google.com/p/go/issues/detail?id=4373
+            break
+        }
+    }
     return
 }
 
@@ -228,7 +288,7 @@ func run(port string) {
             conn.Close()
             continue
         }
-        go handleConnection(ss.NewConn(conn, cipher.Copy()))
+        go handleConnection(user, ss.NewConn(conn, cipher.Copy()))
     }
 }
 

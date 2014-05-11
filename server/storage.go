@@ -15,7 +15,7 @@ type Storage struct {
     pool *redis.Pool
 }
 
-func NewStorage(server string) (*Storage) {
+func NewStorage(server string) *Storage {
     pool := redis.NewPool(func() (conn redis.Conn, err error) {
         conn, err = redis.Dial("tcp", server)
         return

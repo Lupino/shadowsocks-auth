@@ -152,13 +152,6 @@ func handleConnection(user User, conn *ss.Conn) {
     }()
 
     host, extra, err := getRequest(conn)
-    lines := bytes.SplitN(extra, []byte("\r\n"), 2)
-    var uri []byte
-
-    if len(lines) == 2 {
-        uri = lines[0]
-    }
-
     if err != nil {
         log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
         return
@@ -175,34 +168,66 @@ func handleConnection(user User, conn *ss.Conn) {
         }
         return
     }
+    var http_line, status_lines []byte
     defer func() {
+        if http_line == nil {
+            fmt.Printf("CONNET %s %s %d\n", host, user.Name, size)
+        } else {
+            lines := bytes.SplitN(http_line, []byte(" "), 3)
+            status := bytes.Split(status_lines, []byte(" "))
+            status_code := []byte("unknow")
+            if len(status) > 2 {
+                status_code = status[1]
+            }
+            fmt.Printf("%s http://%s%s %s %s %d\n", lines[0], host, lines[1], status_code, user.Name, size)
+        }
         if !closed {
             remote.Close()
         }
     }()
     // write extra bytes read from
-    if extra != nil {
-        // debug.Println("getRequest read extra data, writing to remote, len", len(extra))
-        if _, err = remote.Write(extra); err != nil {
-            debug.Println("write request extra error:", err)
-            return
-        }
+
+    http_line, extra, _ = getProtocol(extra, conn)
+    if size, err = remote.Write(extra); err != nil {
+        debug.Println("write request extra error:", err)
+        return
     }
+
     if debug {
         debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
     }
+
     go ss.PipeThenClose(conn, remote, ss.SET_TIMEOUT)
     res_size, status_lines := PipeThenClose(remote, conn, ss.NO_TIMEOUT)
-    if uri == nil {
-        fmt.Printf("CONNET %s %s %d\n", host, user.Name, size)
-    } else {
-        size += res_size
-        lines = bytes.SplitN(uri, []byte(" "), 2)
-        status := bytes.SplitN(status_lines, []byte(" "), 3)
-        status_code := status[1]
-        fmt.Printf("%s http://%s%s %s %s %d\n", lines[0], host, lines[1], status_code, user.Name, size)
-    }
+    size += res_size
     closed = true
+    return
+}
+
+func getProtocol(extra []byte, conn *ss.Conn) (http_line []byte, data []byte, err error) {
+    if extra == nil {
+        extra = make([]byte, 10)
+        if _, err = io.ReadFull(conn, extra); err != nil {
+            return
+        }
+    }
+
+    buffer := bytes.NewBuffer(extra)
+    if bytes.HasPrefix(extra, []byte("GET")) || bytes.HasPrefix(extra, []byte("POST")) || bytes.HasPrefix(extra, []byte("HEAD")) || bytes.HasPrefix(extra, []byte("PUT"))  {
+        for {
+            lines := bytes.SplitN(buffer.Bytes(), []byte("\r\n"), 2)
+            if len(lines) == 2 {
+                http_line = lines[0]
+                break
+            }
+            buf := make([]byte, 10)
+            if _, err = io.ReadFull(conn, buf); err != nil {
+                break
+            }
+            buffer.Write(buf)
+        }
+    }
+    data = buffer.Bytes()
     return
 }
 
@@ -214,6 +239,8 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int) (total int, line []byte) {
     defer dst.Close()
     buf := pipeBuf.Get()
     // defer pipeBuf.Put(buf)
+    var buffer = bytes.NewBuffer(nil)
+    var is_http = false
     var first = true
     var size int
     for {
@@ -221,16 +248,24 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int) (total int, line []byte) {
             ss.SetReadTimeout(src)
         }
         n, err := src.Read(buf)
-        if first {
-            lines := bytes.SplitN(buf, []byte("\r\n"), 2)
-            if len(lines) == 2 {
-                line = lines[0]
-            }
-            first = false
-        }
         // read may return EOF with n > 0
         // should always process n > 0 bytes before handling error
         if n > 0 {
+            if first {
+                buffer.Write(buf)
+                if bytes.HasPrefix(buffer.Bytes(), []byte("HTTP")) || is_http {
+                    is_http = true
+                    lines := bytes.SplitN(buffer.Bytes(), []byte("\r\n"), 2)
+                    if len(lines) == 2 {
+                        line = lines[0]
+                        first = false
+                    } else {
+                        line = []byte("Unknow unknow unknow")
+                    }
+                } else {
+                    first = false
+                }
+            }
             if size, err = dst.Write(buf[0:n]); err != nil {
                 ss.Debug.Println("write:", err)
                 break

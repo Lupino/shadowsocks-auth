@@ -222,7 +222,7 @@ func showConn(raw_req_header, raw_res_header []byte, host string, user User, siz
         req, _ := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw_req_header)))
         if req == nil {
             lines := bytes.SplitN(raw_req_header, []byte(" "), 2)
-            fmt.Printf("%s http://%s/ \"Unknow\" HTTP/1.1 unknow %s %d\n", lines[0], host, user.Name, size)
+            log.Printf("%s http://%s/ \"Unknow\" HTTP/1.1 unknow %s %d\n", lines[0], host, user.Name, size)
             return
         }
         res, _ := http.ReadResponse(bufio.NewReader(bytes.NewReader(raw_res_header)), req)
@@ -230,9 +230,9 @@ func showConn(raw_req_header, raw_res_header []byte, host string, user User, siz
         if res != nil {
             statusCode = res.StatusCode
         }
-        fmt.Printf("%s http://%s%s \"%s\" %s %d %s %d\n", req.Method, req.Host, req.URL.String(), req.Header.Get("user-agent"), req.Proto, statusCode, user.Name, size)
+        log.Printf("%s http://%s%s \"%s\" %s %d %s %d\n", req.Method, req.Host, req.URL.String(), req.Header.Get("user-agent"), req.Proto, statusCode, user.Name, size)
     } else {
-        fmt.Printf("CONNECT %s \"Unknow\" HTTPS unknow %s %d\n", host, user.Name, size)
+        log.Printf("CONNECT %s \"Unknow\" HTTPS unknow %s %d\n", host, user.Name, size)
     }
 }
 

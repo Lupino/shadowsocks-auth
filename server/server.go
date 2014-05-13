@@ -192,6 +192,7 @@ func handleConnection(user User, conn *ss.Conn) {
     is_http, extra, _ = checkHttp(extra, conn)
     raw_req_header = extra
     res_size, err = remote.Write(extra)
+    storage.IncrSize("flow:" + user.Name, res_size)
     size += res_size
     if err != nil {
         debug.Println("write request extra error:", err)
@@ -203,13 +204,13 @@ func handleConnection(user User, conn *ss.Conn) {
     }
 
     go func() {
-        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http)
+        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http, false, user)
         if is_http {
             req_chan<-raw_header
         }
     }()
 
-    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http)
+    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http, true, user)
     size += res_size
     closed = true
     return
@@ -268,7 +269,7 @@ func checkHttp(extra []byte, conn *ss.Conn) (is_http bool, data []byte, err erro
 const bufSize = 4096
 const nBuf = 2048
 
-func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool) (total int, raw_header []byte) {
+func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool, user User) (total int, raw_header []byte) {
     var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
     defer dst.Close()
     buf := pipeBuf.Get()
@@ -295,6 +296,12 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool) (total int, 
             }
 
             size, err = dst.Write(buf[0:n])
+            if is_res {
+                total_size, _ := storage.IncrSize("flow:" + user.Name, size)
+                if total_size > user.Limit {
+                    return
+                }
+            }
             total += size
             if err != nil {
                 ss.Debug.Println("write:", err)
@@ -345,7 +352,14 @@ func run(port string) {
             conn.Close()
             continue
         }
-        log.Println("creating cipher for user:", user.Name)
+        size, err := storage.GetSize("flow:" + user.Name)
+        if user.Limit < size {
+            log.Printf("Error user runover: %s\n", size)
+            conn.Close()
+            continue
+        }
+
+        // log.Println("creating cipher for user:", user.Name)
         cipher, err = ss.NewCipher(user.Method, user.Password)
         if err != nil {
             log.Printf("Error generating cipher for user: %s %v\n", user.Name, err)

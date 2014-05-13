@@ -9,6 +9,7 @@ type User struct {
     Name     string `json:"name"`
     Password string `json:"password"`
     Method   string `json:"method"`
+    Limit    int64  `json:"limit"`
 }
 
 type Storage struct {
@@ -41,5 +42,17 @@ func (s *Storage) Set(key string, user User) (err error) {
     }
     conn := s.pool.Get()
     _, err = conn.Do("SET", key, data)
+    return
+}
+
+func (s *Storage) IncrSize(key string, incr int) (score int64, err error) {
+    conn := s.pool.Get()
+    score, err = redis.Int64(conn.Do("INCRBY", key, incr))
+    return
+}
+
+func (s *Storage) GetSize(key string) (score int64, err error) {
+    conn := s.pool.Get()
+    score, err = redis.Int64(conn.Do("GET", key))
     return
 }

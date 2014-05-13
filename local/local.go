@@ -247,6 +247,9 @@ func parseServerConfig(config *ss.Config) {
 
 func DialWithRawAddr(rawaddr []byte, user User, server string, cipher *ss.Cipher) (remote *ss.Conn, err error) {
     conn, err := net.Dial("tcp", server)
+    if err != nil {
+        return nil, err
+    }
     buf := make([]byte, 2)
     buf[0] = 1
     buf[1] = byte(len(user.Name))

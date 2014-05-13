@@ -335,15 +335,15 @@ func run(port string) {
     ln, err := net.Listen("tcp", ":"+port)
     if err != nil {
         log.Printf("error listening port %v: %v\n", port, err)
-        return
+        os.Exit(0)
     }
     var cipher *ss.Cipher
     log.Printf("server listening port %v ...\n", port)
     for {
         conn, err := ln.Accept()
         if err != nil {
-            debug.Printf("accept error: %v\n", err)
-            return
+            log.Printf("accept error: %v\n", err)
+            os.Exit(0)
         }
 
         user, err := getUser(conn)

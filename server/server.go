@@ -16,6 +16,8 @@ import (
     "runtime"
     "strconv"
     "syscall"
+    "bufio"
+    "net/http"
 )
 
 var debug ss.DebugLog
@@ -125,6 +127,10 @@ var nextLogConnCnt int = logCntDelta
 func handleConnection(user User, conn *ss.Conn) {
     var host string
     var size = 0
+    var raw_req_header, raw_res_header []byte
+    var is_http = false
+    var res_size = 0
+    var req_chan = make(chan []byte)
 
     connCnt++ // this maybe not accurate, but should be enough
     if connCnt-nextLogConnCnt >= 0 {
@@ -168,27 +174,26 @@ func handleConnection(user User, conn *ss.Conn) {
         }
         return
     }
-    var http_line, status_lines []byte
     defer func() {
-        if http_line == nil {
-            fmt.Printf("CONNET %s %s %d\n", host, user.Name, size)
-        } else {
-            lines := bytes.SplitN(http_line, []byte(" "), 3)
-            status := bytes.Split(status_lines, []byte(" "))
-            status_code := []byte("unknow")
-            if len(status) > 2 {
-                status_code = status[1]
-            }
-            fmt.Printf("%s http://%s%s %s %s %d\n", lines[0], host, lines[1], status_code, user.Name, size)
+        if is_http{
+            tmp_req_header := <-req_chan
+            buffer := bytes.NewBuffer(raw_req_header)
+            buffer.Write(tmp_req_header)
+            raw_req_header = buffer.Bytes()
         }
+        showConn(raw_req_header, raw_res_header, host, user, size, is_http)
+        close(req_chan)
         if !closed {
             remote.Close()
         }
     }()
     // write extra bytes read from
 
-    http_line, extra, _ = getProtocol(extra, conn)
-    if size, err = remote.Write(extra); err != nil {
+    is_http, extra, _ = checkHttp(extra, conn)
+    raw_req_header = extra
+    res_size, err = remote.Write(extra)
+    size += res_size
+    if err != nil {
         debug.Println("write request extra error:", err)
         return
     }
@@ -197,52 +202,81 @@ func handleConnection(user User, conn *ss.Conn) {
         debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
     }
 
-    go ss.PipeThenClose(conn, remote, ss.SET_TIMEOUT)
-    res_size, status_lines := PipeThenClose(remote, conn, ss.NO_TIMEOUT)
+    go func() {
+        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http)
+        if is_http {
+            req_chan<-raw_header
+        }
+    }()
+
+    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http)
     size += res_size
     closed = true
     return
 }
 
-func getProtocol(extra []byte, conn *ss.Conn) (http_line []byte, data []byte, err error) {
-    if extra == nil {
-        extra = make([]byte, 10)
-        if _, err = io.ReadFull(conn, extra); err != nil {
+
+func showConn(raw_req_header, raw_res_header []byte, host string, user User, size int, is_http bool) {
+    if is_http {
+        req, _ := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw_req_header)))
+        if req == nil {
+            lines := bytes.SplitN(raw_req_header, []byte(" "), 2)
+            fmt.Printf("%s http://%s/ \"Unknow\" HTTP/1.1 unknow %s %d\n", lines[0], host, user.Name, size)
+            return
+        }
+        res, _ := http.ReadResponse(bufio.NewReader(bytes.NewReader(raw_res_header)), req)
+        statusCode := 200
+        if res != nil {
+            statusCode = res.StatusCode
+        }
+        fmt.Printf("%s http://%s%s \"%s\" %s %d %s %d\n", req.Method, req.Host, req.URL.String(), req.Header.Get("user-agent"), req.Proto, statusCode, user.Name, size)
+    } else {
+        fmt.Printf("CONNECT %s \"Unknow\" HTTPS unknow %s %d\n", host, user.Name, size)
+    }
+}
+
+func checkHttp(extra []byte, conn *ss.Conn) (is_http bool, data []byte, err error) {
+    var buf []byte
+    var methods = []string{"GET", "HEAD", "POST", "PUT", "TRACE", "OPTIONS", "DELETE"}
+    is_http = false
+    if extra == nil || len(extra) < 10 {
+        buf = make([]byte, 10)
+        if _, err = io.ReadFull(conn, buf); err != nil {
             return
         }
     }
 
-    buffer := bytes.NewBuffer(extra)
-    if bytes.HasPrefix(extra, []byte("GET")) || bytes.HasPrefix(extra, []byte("POST")) || bytes.HasPrefix(extra, []byte("HEAD")) || bytes.HasPrefix(extra, []byte("PUT"))  {
-        for {
-            lines := bytes.SplitN(buffer.Bytes(), []byte("\r\n"), 2)
-            if len(lines) == 2 {
-                http_line = lines[0]
-                break
-            }
-            buf := make([]byte, 10)
-            if _, err = io.ReadFull(conn, buf); err != nil {
-                break
-            }
-            buffer.Write(buf)
+    if buf == nil {
+        data = extra
+    } else if extra == nil {
+        data = buf
+    }else {
+        buffer := bytes.NewBuffer(extra)
+        buffer.Write(buf)
+        data = buffer.Bytes()
+    }
+
+    for _, method := range methods {
+        if bytes.HasPrefix(data, []byte(method)) {
+            is_http = true
+            break
         }
     }
-    data = buffer.Bytes()
     return
 }
 
 const bufSize = 4096
 const nBuf = 2048
 
-func PipeThenClose(src, dst net.Conn, timeoutOpt int) (total int, line []byte) {
+func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool) (total int, raw_header []byte) {
     var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
     defer dst.Close()
     buf := pipeBuf.Get()
     // defer pipeBuf.Put(buf)
     var buffer = bytes.NewBuffer(nil)
-    var is_http = false
-    var first = true
+    var is_end = false
     var size int
+
     for {
         if timeoutOpt == ss.SET_TIMEOUT {
             ss.SetReadTimeout(src)
@@ -251,26 +285,21 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int) (total int, line []byte) {
         // read may return EOF with n > 0
         // should always process n > 0 bytes before handling error
         if n > 0 {
-            if first {
+            if is_http && !is_end {
                 buffer.Write(buf)
-                if bytes.HasPrefix(buffer.Bytes(), []byte("HTTP")) || is_http {
-                    is_http = true
-                    lines := bytes.SplitN(buffer.Bytes(), []byte("\r\n"), 2)
-                    if len(lines) == 2 {
-                        line = lines[0]
-                        first = false
-                    } else {
-                        line = []byte("Unknow unknow unknow")
-                    }
-                } else {
-                    first = false
+                raw_header = buffer.Bytes()
+                lines := bytes.SplitN(raw_header, []byte("\r\n\r\n"), 2)
+                if len(lines) == 2 {
+                    is_end = true
                 }
             }
-            if size, err = dst.Write(buf[0:n]); err != nil {
+
+            size, err = dst.Write(buf[0:n])
+            total += size
+            if err != nil {
                 ss.Debug.Println("write:", err)
                 break
             }
-            total += size
         }
         if err != nil || n == 0 {
             // Always "use of closed network connection", but no easy way to

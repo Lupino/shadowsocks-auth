@@ -18,6 +18,7 @@ import (
     "syscall"
     "bufio"
     "net/http"
+    "strings"
 )
 
 var debug ss.DebugLog
@@ -190,6 +191,9 @@ func handleConnection(user User, conn *ss.Conn) {
     // write extra bytes read from
 
     is_http, extra, _ = checkHttp(extra, conn)
+    if strings.HasSuffix(host, ":80") {
+        is_http = true
+    }
     raw_req_header = extra
     res_size, err = remote.Write(extra)
     storage.IncrSize("flow:" + user.Name, res_size)

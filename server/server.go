@@ -240,7 +240,7 @@ func showConn(raw_req_header, raw_res_header []byte, host string, user User, siz
         }
         log.Printf("%s http://%s%s \"%s\" %s %d %s %d\n", req.Method, req.Host, req.URL.String(), req.Header.Get("user-agent"), req.Proto, statusCode, user.Name, size)
     } else {
-        log.Printf("CONNECT %s \"Unknow\" HTTPS unknow %s %d\n", host, user.Name, size)
+        log.Printf("CONNECT %s \"NONE\" NONE NONE %s %d\n", host, user.Name, size)
     }
 }
 

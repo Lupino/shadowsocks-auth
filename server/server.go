@@ -222,6 +222,10 @@ func handleConnection(user User, conn *ss.Conn) {
 
 
 func showConn(raw_req_header, raw_res_header []byte, host string, user User, size int, is_http bool) {
+    if size == 0 {
+        log.Printf("Error: user %s request %s cancel", user.Name, host)
+        return
+    }
     if is_http {
         req, _ := http.ReadRequest(bufio.NewReader(bytes.NewReader(raw_req_header)))
         if req == nil {

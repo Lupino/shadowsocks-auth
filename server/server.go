@@ -351,7 +351,7 @@ func run(port string) {
         conn, err := ln.Accept()
         if err != nil {
             log.Printf("accept error: %v\n", err)
-            os.Exit(0)
+            continue
         }
 
         user, err := getUser(conn)

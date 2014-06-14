@@ -209,13 +209,13 @@ func handleConnection(user User, conn *ss.Conn) {
     }
 
     go func() {
-        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http, false, user)
+        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http, false, host, user)
         if is_http {
             req_chan<-raw_header
         }
     }()
 
-    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http, true, user)
+    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http, true, host, user)
     size += res_size
     closed = true
     return
@@ -278,7 +278,7 @@ func checkHttp(extra []byte, conn *ss.Conn) (is_http bool, data []byte, err erro
 const bufSize = 4096
 const nBuf = 2048
 
-func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool, user User) (total int, raw_header []byte) {
+func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool, host string, user User) (total int, raw_header []byte) {
     var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
     defer dst.Close()
     buf := pipeBuf.Get()
@@ -307,7 +307,7 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool,
             size, err = dst.Write(buf[0:n])
             if is_res {
                 total_size, _ := storage.IncrSize("flow:" + user.Name, size)
-                storage.ZincrbySize("flow:" + user.Name, host, res_size)
+                storage.ZincrbySize("flow:" + user.Name, host, size)
                 if total_size > user.Limit {
                     return
                 }

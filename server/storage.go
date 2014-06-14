@@ -5,6 +5,8 @@ import (
     "github.com/garyburd/redigo/redis"
 )
 
+const SS_PREFIX = "ss:"
+
 type User struct {
     Name     string `json:"name"`
     Password string `json:"password"`
@@ -28,7 +30,7 @@ func (s *Storage) Get(key string) (user User, err error) {
     var data []byte
     var conn = s.pool.Get()
     defer conn.Close()
-    data, err = redis.Bytes(conn.Do("GET", key))
+    data, err = redis.Bytes(conn.Do("GET", SS_PREFIX + key))
     if err != nil {
         return
     }
@@ -43,20 +45,20 @@ func (s *Storage) Set(key string, user User) (err error) {
     }
     conn := s.pool.Get()
     defer conn.Close()
-    _, err = conn.Do("SET", key, data)
+    _, err = conn.Do("SET", SS_PREFIX + key, data)
     return
 }
 
 func (s *Storage) IncrSize(key string, incr int) (score int64, err error) {
     var conn = s.pool.Get()
     defer conn.Close()
-    score, err = redis.Int64(conn.Do("INCRBY", key, incr))
+    score, err = redis.Int64(conn.Do("INCRBY", SS_PREFIX + key, incr))
     return
 }
 
 func (s *Storage) GetSize(key string) (score int64, err error) {
     var conn = s.pool.Get()
     defer conn.Close()
-    score, err = redis.Int64(conn.Do("GET", key))
+    score, err = redis.Int64(conn.Do("GET", SS_PREFIX + key))
     return
 }

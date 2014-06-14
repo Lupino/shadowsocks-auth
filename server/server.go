@@ -49,7 +49,7 @@ func getUser(conn net.Conn) (user User, err error) {
     if _, err = io.ReadFull(conn, username); err != nil {
         return
     }
-    user, err = storage.Get(string(username))
+    user, err = storage.Get("user:" + string(username))
     return
 }
 

@@ -3,6 +3,8 @@ package main
 import (
     "encoding/json"
     "github.com/garyburd/redigo/redis"
+    "time"
+    "fmt"
 )
 
 const SS_PREFIX = "ss:"
@@ -60,5 +62,38 @@ func (s *Storage) GetSize(key string) (score int64, err error) {
     var conn = s.pool.Get()
     defer conn.Close()
     score, err = redis.Int64(conn.Do("GET", SS_PREFIX + key))
+    return
+}
+
+func (s *Storage) ZincrbySize(key, member string, incr int) (err error) {
+    var conn = s.pool.Get()
+    defer conn.Close()
+    var score int64
+    var year, month, day int
+    var real_key string
+
+    now := time.Now()
+    year = now.Year()
+    month = int(now.Month())
+    day = now.Day()
+
+    // store year
+    real_key = fmt.Sprintf("%s%s:%d", SS_PREFIX, key, year)
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    if score < 0 || err != nil {
+        conn.Do("ZADD", real_key, incr, member)
+    }
+    // store year:month
+    real_key = fmt.Sprintf("%s%s:%d:%d", SS_PREFIX, key, year, month)
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    if score < 0 || err != nil {
+        conn.Do("ZADD", real_key, incr, member)
+    }
+    // store year:month:day
+    real_key = fmt.Sprintf("%s%s:%d:%d:%d", SS_PREFIX, key, year, month, day)
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    if score < 0 || err != nil {
+        conn.Do("ZADD", real_key, incr, member)
+    }
     return
 }

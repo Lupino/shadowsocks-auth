@@ -197,6 +197,7 @@ func handleConnection(user User, conn *ss.Conn) {
     raw_req_header = extra
     res_size, err = remote.Write(extra)
     storage.IncrSize("flow:" + user.Name, res_size)
+    storage.ZincrbySize("flow:" + user.Name, host, res_size)
     size += res_size
     if err != nil {
         debug.Println("write request extra error:", err)
@@ -306,6 +307,7 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool,
             size, err = dst.Write(buf[0:n])
             if is_res {
                 total_size, _ := storage.IncrSize("flow:" + user.Name, size)
+                storage.ZincrbySize("flow:" + user.Name, host, res_size)
                 if total_size > user.Limit {
                     return
                 }

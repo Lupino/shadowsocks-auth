@@ -79,38 +79,38 @@ func (s *Storage) ZincrbySize(key, member string, incr int) (err error) {
 
     // store year
     real_key = fmt.Sprintf("%s%s:%d", SS_PREFIX, key, year)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, member))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, member)
     }
     // store year:month
     real_key = fmt.Sprintf("%s%s:%d:%d", SS_PREFIX, key, year, month)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, member))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, member)
     }
     // store year:month:day
     real_key = fmt.Sprintf("%s%s:%d:%d:%d", SS_PREFIX, key, year, month, day)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, member, incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, member))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, member)
     }
 
     // store year total
     real_key = fmt.Sprintf("%s%s:%d", SS_PREFIX, key, year)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, "total", incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, "total"))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, "total")
     }
     // store year:month total
     real_key = fmt.Sprintf("%s%s:%d:%d", SS_PREFIX, key, year, month)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, "total", incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, "total"))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, "total")
     }
     // store year:month:day total
     real_key = fmt.Sprintf("%s%s:%d:%d:%d", SS_PREFIX, key, year, month, day)
-    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, "total", incr))
+    score, err = redis.Int64(conn.Do("ZINCRBY", real_key, incr, "total"))
     if score < 0 || err != nil {
         conn.Do("ZADD", real_key, incr, "total")
     }

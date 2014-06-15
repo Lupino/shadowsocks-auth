@@ -1,3 +1,6 @@
-all:
+all: deps
 	cd server;go build -o $(GOPATH)/bin/server;
 	cd local;go build -o $(GOPATH)/bin/local;
+
+deps:
+	./deps.sh

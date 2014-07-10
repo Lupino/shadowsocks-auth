@@ -19,13 +19,21 @@ import (
     "bufio"
     "net/http"
     "strings"
+    "time"
 )
 
 var debug ss.DebugLog
 
 var storage *Storage
+var readTimeout time.Duration
 
 const dnsGoroutineNum = 64
+
+func SetReadTimeout(c net.Conn) {
+    if readTimeout != 0 {
+        c.SetReadDeadline(time.Now().Add(readTimeout))
+    }
+}
 
 func getUser(conn net.Conn) (user User, err error) {
     const (
@@ -75,7 +83,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
     buf := make([]byte, 260)
     var n int
     // read till we get possible domain length field
-    ss.SetReadTimeout(conn)
+    SetReadTimeout(conn)
     if n, err = io.ReadAtLeast(conn, buf, idDmLen+1); err != nil {
         return
     }
@@ -94,7 +102,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
     }
 
     if n < reqLen { // rare case
-        ss.SetReadTimeout(conn)
+        SetReadTimeout(conn)
         if _, err = io.ReadFull(conn, buf[n:reqLen]); err != nil {
             return
         }
@@ -289,7 +297,7 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool,
 
     for {
         if timeoutOpt == ss.SET_TIMEOUT {
-            ss.SetReadTimeout(src)
+            SetReadTimeout(src)
         }
         n, err := src.Read(buf)
         // read may return EOF with n > 0
@@ -387,11 +395,13 @@ func main() {
     var core int
     var serverPort string
     var redisServer string
+    var timeout int
 
     flag.BoolVar(&printVer, "version", false, "print version")
     flag.StringVar(&serverPort, "p", "8388", "server port")
     flag.StringVar(&redisServer, "redis", ":6379", "redis server")
     flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
+    flag.IntVar(&timeout, "timeout", 10, "Socket read timeout")
     flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
     flag.Parse()
@@ -407,6 +417,8 @@ func main() {
     if core > 0 {
         runtime.GOMAXPROCS(core)
     }
+
+    readTimeout = time.Duration(timeout) * time.Second
 
     go run(serverPort)
 

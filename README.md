@@ -35,6 +35,8 @@ server
     @method: 加密方式
     @limit: 最大限制流量
 
+server 端使用脚本 <https://gist.github.com/Lupino/d0609ab79d873b2c1015>
+
 local
 -----
 

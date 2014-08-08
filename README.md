@@ -4,6 +4,8 @@
 当提供 shadowsocks 服务时，可以通过一个端口和用户的模式，服务于多个用户，而不必启用多个服务。
 流量统计可以实时的查看用户的流量，并带有流量限制。
 
+配套的 gui 客户端 <https://github.com/Lupino/shadowsocks-gui>
+
 
 build
 -----

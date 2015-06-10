@@ -357,8 +357,8 @@ func handleConnection(conn net.Conn) {
         }
     }()
 
-    go ss.PipeThenClose(conn, remote, ss.NO_TIMEOUT)
-    ss.PipeThenClose(remote, conn, ss.NO_TIMEOUT)
+    go ss.PipeThenClose(conn, remote)
+    ss.PipeThenClose(remote, conn)
     closed = true
     debug.Println("closed connection to", addr)
 }

@@ -217,13 +217,13 @@ func handleConnection(user User, conn *ss.Conn) {
     }
 
     go func() {
-        _, raw_header := PipeThenClose(conn, remote, ss.SET_TIMEOUT, is_http, false, host, user)
+        _, raw_header := PipeThenClose(conn, remote, is_http, false, host, user)
         if is_http {
             req_chan<-raw_header
         }
     }()
 
-    res_size, raw_res_header = PipeThenClose(remote, conn, ss.NO_TIMEOUT, is_http, true, host, user)
+    res_size, raw_res_header = PipeThenClose(remote, conn, is_http, true, host, user)
     size += res_size
     closed = true
     return
@@ -286,7 +286,7 @@ func checkHttp(extra []byte, conn *ss.Conn) (is_http bool, data []byte, err erro
 const bufSize = 4096
 const nBuf = 2048
 
-func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool, host string, user User) (total int, raw_header []byte) {
+func PipeThenClose(src, dst net.Conn, is_http bool, is_res bool, host string, user User) (total int, raw_header []byte) {
     var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
     defer dst.Close()
     buf := pipeBuf.Get()
@@ -296,9 +296,7 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int, is_http bool, is_res bool,
     var size int
 
     for {
-        if timeoutOpt == ss.SET_TIMEOUT {
-            SetReadTimeout(src)
-        }
+        SetReadTimeout(src)
         n, err := src.Read(buf)
         // read may return EOF with n > 0
         // should always process n > 0 bytes before handling error

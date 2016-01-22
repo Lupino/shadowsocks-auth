@@ -49,7 +49,7 @@ func getUser(conn net.Conn) (user User, err error) {
     case version:
         break
     default:
-        err = errors.New(fmt.Sprintf("version %s not supported", buf[idVersion]))
+        err = fmt.Errorf("version %d not supported", buf[idVersion])
         return
     }
     userLen := buf[idUser]
